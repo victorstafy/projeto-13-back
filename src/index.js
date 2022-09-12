@@ -127,7 +127,6 @@ server.post("/signup", async (req, res) => {
 server.post("/balance", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
     const { value, title, type } = req.body;
-
     const validation = deposit_withdrawSchema.validate(
         {value, title, type},
         { abortEarly: false });
@@ -169,10 +168,10 @@ server.post("/balance", async (req, res) => {
     }
 });
 
-server.get("/carteira", async (req, res) => {
+server.get("/balance", async (req, res) => {
     const token = req.headers.authorization?.replace("Bearer ", "");
     try {
-        const logged_user = await db.collection("sessions").findOne({ token });
+        const logged_user = await db.collection("login_sessions").findOne({ token });
 
         if (!logged_user) {
         return res.status(401).send({ message: "Usuário não encontrado" });
