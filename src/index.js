@@ -28,7 +28,7 @@ const userRegisterSchema = joi
     name: joi.string().empty("").required(),
     email: joi
       .string()
-      .email({ minDomainAtoms: 2 })
+      .email({ minDomainSegments: 2, tlds: { allow: ["com", "net"] } })
       .required(),
     password: joi
       .string()
@@ -36,13 +36,12 @@ const userRegisterSchema = joi
       .required(),
       password_confirm: joi.ref("password"),
   });
-//   .with("password", "repeatPassword")
 
 const userSigninSchema = joi
   .object({
     email: joi
       .string()
-      .email({ minDomainAtoms: 2 })
+      .email({ minDomainSegments: 2, tlds: { allow: ["com", "net"] } })
       .required(),
     password: joi
       .string()
@@ -53,7 +52,7 @@ const userSigninSchema = joi
 const deposit_withdrawSchema = joi.object({
   value: joi.number().required(),
   title: joi.string().required(),
-//   type: joi.valid("entrada").valid("saida").required(),
+  type: joi.valid("withdraw").valid("deposit").required(),
 });
 
 // get and post APIs
@@ -93,38 +92,101 @@ server.post("/signin", async (req, res) => {
     }
   });
 
-  server.post("/signup", async (req, res) => {
+server.post("/signup", async (req, res) => {
     const { name, email, password, password_confirm } = req.body;
-  
+
     const validation = userRegisterSchema.validate(
-      {name,email,password,password_confirm},
-      { abortEarly: false }
+        {name,email,password,password_confirm},
+        { abortEarly: false }
     );
     if (validation.error) {
-      const err = validation.error.details.map((detail) => detail.message);
-      return res.status(422).send(err);
+        const err = validation.error.details.map((detail) => detail.message);
+        return res.status(422).send(err);
     }
-  
+
     try {
-      const user = await db.collection("users").findOne({ email });
-  
-      if (user) {
+        const user = await db.collection("users").findOne({ email });
+
+        if (user) {
         return res.status(409).send({ message: "Este usuário já está cadastrado!" });
-      }
-  
-      const passwordHash = bcrypt.hashSync(password, 12);
-  
-      await db
+        }
+
+        const password_token = bcrypt.hashSync(password, 12);
+
+        await db
         .collection("users")
-        .insertOne({ name, email, password: passwordHash, transactions: [] });
-  
-      return res.sendStatus(201);
+        .insertOne({ name, email, password: password_token, balance_list: [] });
+
+        return res.sendStatus(201);
     } catch (err) {
-      console.error(err);
-      return res.sendStatus(500);
+        console.error(err);
+        return res.sendStatus(500);
     }
-  });
+});
+
+server.post("/balance", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    const { value, title, type } = req.body;
+
+    const validation = deposit_withdrawSchema.validate(
+        {value, title, type},
+        { abortEarly: false });
+
+    if (validation.error) {
+        const err = validation.error.details.map((detail) => detail.message);
+        return res.status(422).send(err);
+    }
+
+    try {
+        const logged_user = await db.collection("login_sessions").findOne({ token });
+
+        if (!logged_user) {
+            return res.status(401).send({ message: "O usuário não foi encontrado" });
+        }
+
+        const user = await db.collection("users").findOne({ id: logged_user.userId });
+
+        const balance_list = user.balance_list;
+        let id = balance_list.length + 1;
+
+        const date = dayjs().format("DD/MM");
+
+        const money_amount = Number(value).toFixed(2);
+
+        balance_list.push({ id, date, value: money_amount, title, type });
+
+        await db
+        .collection("users")
+        .updateOne(
+            { id: logged_user.userId },
+            { $set: { balance_list: balance_list } }
+        );
+
+        return res.sendStatus(201);
+    } catch (err) {
+        console.error(err);
+        return res.sendStatus(500);
+    }
+});
+
+server.get("/carteira", async (req, res) => {
+    const token = req.headers.authorization?.replace("Bearer ", "");
+    try {
+        const logged_user = await db.collection("sessions").findOne({ token });
+
+        if (!logged_user) {
+        return res.status(401).send({ message: "Usuário não encontrado" });
+        }
+
+        const user = await db.collection("users").findOne({ id: logged_user.userId });
+
+        return res.send(user.balance_list);
+    } catch (err) {
+        console.error(err);
+        return res.sendStatus(500);
+    }
+});
 
 
-server.listen(5000,function(){console.log('port 5000')});
+server.listen(5000,function(){console.log('listening on 5000')});
 
